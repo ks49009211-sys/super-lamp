@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Little One – grow a baby with love</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#f6d9e4}
+  body{font-family:"Comfortaa","Trebuchet MS",system-ui,sans-serif;color:#5a3560;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  button{font:inherit;color:#5a3560;background:rgba(255,255,255,.8);border:1px solid rgba(90,53,96,.25);border-radius:999px;padding:8px 14px;cursor:pointer}
+  button:focus-visible,input:focus-visible{outline:2px solid #e0709a;outline-offset:3px}
+  .top{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 12px) 14px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .info{background:rgba(255,255,255,.8);border-radius:18px;padding:8px 14px;min-width:150px}
+  .info b{display:block;font-size:1rem}.info small{opacity:.75}
+  .meter{height:8px;border-radius:6px;background:rgba(90,53,96,.15);margin-top:6px;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff9ec4,#ffc27a);transition:width .6s}
+  .bar{position:fixed;left:0;right:0;bottom:0;padding:0 10px calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;gap:8px;justify-content:center}
+  .bar button{display:flex;flex-direction:column;align-items:center;gap:2px;border-radius:18px;padding:8px 10px;min-width:58px;font-size:.7rem}
+  .bar button span{font-size:1.5rem;line-height:1}
+  .bar button:active{background:#ffd6e6}
+  .toast{position:fixed;left:0;right:0;top:15%;text-align:center;padding:0 24px;font-size:1.2rem;font-weight:600;opacity:0;transition:opacity 1s;pointer-events:none;text-shadow:0 2px 10px rgba(255,255,255,.9)}
+  .toast.show{opacity:1}
+  .intro{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;background:rgba(255,236,244,.94);transition:opacity .8s}
+  .intro.gone{opacity:0;pointer-events:none}
+  .intro h1{font-size:2rem;margin:0}.intro p{margin:0;max-width:30ch;line-height:1.6}
+  .intro input{font:inherit;text-align:center;padding:10px 16px;border-radius:999px;border:2px solid #e0a8c0;color:#5a3560;width:220px;-webkit-user-select:text;user-select:text}
+  .intro button{background:#e0709a;color:#fff;border:0;font-weight:600;padding:12px 30px}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A nursery with a baby. Use the buttons below to care for the baby."></canvas>
+<div class="top">
+  <div class="info"><b id="nm"></b><small id="stg"></small><div class="meter"><i id="mt"></i></div></div>
+  <button id="sbtn" aria-pressed="true">Sound on</button>
+</div>
+<div class="toast" id="toast" aria-live="polite"></div>
+<div class="bar" id="bar">
+  <button data-a="feed"><span>🍼</span>Feed</button>
+  <button data-a="cuddle"><span>🤗</span>Cuddle</button>
+  <button data-a="play"><span>🧸</span>Play</button>
+  <button data-a="sing"><span>🎵</span>Sing</button>
+  <button data-a="sleep"><span>🌙</span>Nap</button>
+</div>
+<div class="intro" id="intro">
+  <h1>Little One</h1>
+  <p>A tiny baby is here. Love it, and watch it grow up. No hurry, nothing can go wrong.</p>
+  <input id="name" maxlength="14" placeholder="Name your baby" aria-label="Baby name">
+  <button id="start">Meet your baby</button>
+</div>
+
+<script>
+(function(){
+  const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+  const toastEl=document.getElementById('toast'),nmEl=document.getElementById('nm'),stgEl=document.getElementById('stg'),mt=document.getElementById('mt');
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TH=[0,10,26,46,70],STAGES=['Newborn','Baby','Crawler','Toddler','Little kid'],SC=[.78,.92,1,1.12,1.25];
+  const WANT=[['feed','🍼'],['cuddle','🤗'],['play','🧸'],['sing','🎵'],['sleep','💤']];
+  let W,H,u,love=0,name='Little one',stage=0,time=0,last=performance.now(),soundOn=true,audio=null,toastT=null;
+  let anim='idle',animT=0,want=null,wantT=4,parts=[],dark=0,started=false,blink=0;
+
+  try{const s=JSON.parse(localStorage.getItem('littleone')||'null');if(s){love=s.love||0;name=s.name||name;document.getElementById('name').value=s.name||'';}}catch(e){}
+  const stageOf=l=>{let s=0;TH.forEach((t,i)=>{if(l>=t)s=i;});return s;};
+  const save=()=>{try{localStorage.setItem('littleone',JSON.stringify({love,name}));}catch(e){}};
+
+  function resize(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);u=Math.max(.65,Math.min(W/430,H/760,1.4));}
+  addEventListener('resize',resize);resize();
+
+  function tone(f,len,vol,type){
+    if(!soundOn)return;
+    try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();
+      const t=audio.currentTime,o=audio.createOscillator(),g=audio.createGain();o.type=type||'sine';o.frequency.value=f;
+      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+len);
+      o.connect(g).connect(audio.destination);o.start(t);o.stop(t+len+.1);}catch(e){}
+  }
+  const giggle=()=>[700,880,1046].forEach((f,i)=>setTimeout(()=>tone(f,.25,.07,'triangle'),i*90));
+  function lullaby(){[392,440,523.25,440,392,330,392].forEach((f,i)=>setTimeout(()=>tone(f,.9,.09),i*380));}
+  function toast(t){toastEl.textContent=t;toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),3800);}
+  function burst(e,n){for(let i=0;i<n;i++)parts.push({e,x:(Math.random()-.5)*80,y:-120*SC[stage]*u+(Math.random()*20),vx:(Math.random()-.5)*40,vy:-30-Math.random()*40,life:1.6});}
+
+  function ui(){
+    nmEl.textContent=name;stgEl.textContent=STAGES[stage];
+    const lo=TH[stage],hi=TH[stage+1];mt.style.width=(hi?Math.min(100,(love-lo)/(hi-lo)*100):100)+'%';
+  }
+  function gain(n){
+    love+=n;const s=stageOf(love);
+    if(s>stage){stage=s;burst('🎉',5);burst('⭐',6);
+      toast([,`${name} can sit up now!`,`${name} is crawling around!`,`${name} took first steps!`,`${name}'s first word: “hi!”`][s]);
+      [523.25,659.25,783.99,1046.5].forEach((f,i)=>setTimeout(()=>tone(f,1.4,.1),i*180));}
+    save();ui();
+  }
+
+  function act(a){
+    if(!started||animT>0)return;
+    anim=a;animT=a==='sleep'?7:2.6;
+    const bonus=want&&want[0]===a;gain(bonus?2:1);if(bonus){want=null;wantT=7;burst('✨',4);}
+    if(a==='feed'){burst('💧',2);}
+    if(a==='cuddle'){burst('❤️',5);giggle();}
+    if(a==='play'){burst('⭐',4);giggle();}
+    if(a==='sing'){burst('🎵',5);lullaby();}
+    if(a==='sleep'){lullaby();}
+  }
+  document.getElementById('bar').addEventListener('click',e=>{const b=e.target.closest('button');if(b)act(b.dataset.a);});
+  cv.addEventListener('pointerdown',()=>act('cuddle'));
+
+  function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+  function em(e,x,y,s){ctx.font=s+'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",serif';ctx.fillText(e,x,y);}
+
+  function room(){
+    const hor=H*.58;
+    let g=ctx.createLinearGradient(0,0,0,hor);g.addColorStop(0,'#ffe3ee');g.addColorStop(1,'#ffd3e3');ctx.fillStyle=g;ctx.fillRect(0,0,W,hor);
+    ctx.fillStyle='#ecc9a2';ctx.fillRect(0,hor,W,H-hor);
+    ctx.fillStyle='rgba(255,255,255,.35)';for(let i=0;i<W;i+=60*u){ctx.fillRect(i,0,12*u,hor);}
+    // window
+    const wx=W*.08,wy=H*.1,ww=Math.min(120*u,W*.3),wh=ww*1.1;
+    ctx.fillStyle=dark>.4?'#2b2764':'#bfe6ff';rr(wx,wy,ww,wh,16);ctx.fill();
+    ctx.textAlign='center';ctx.textBaseline='middle';em(dark>.4?'🌙':'☁️',wx+ww/2,wy+wh*.4,ww*.35);
+    ctx.strokeStyle='#fff';ctx.lineWidth=6;rr(wx,wy,ww,wh,16);ctx.stroke();ctx.beginPath();ctx.moveTo(wx+ww/2,wy);ctx.lineTo(wx+ww/2,wy+wh);ctx.stroke();
+    // mobile
+    if(stage<=1){const mx=W*.68,sw=reduce?0:Math.sin(time*.8)*8;ctx.strokeStyle='#d9a7c0';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(mx,0);ctx.lineTo(mx,H*.12);ctx.stroke();
+      [['⭐',-40],['🌙',0],['☁️',40]].forEach(([e,o],i)=>{ctx.beginPath();ctx.moveTo(mx,H*.12);ctx.lineTo(mx+o+sw,H*.12+34*u);ctx.stroke();em(e,mx+o+sw,H*.12+48*u,26*u);});}
+    // rug
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(W/2,H*.7,Math.min(W*.46,260),H*.075,0,0,6.283);ctx.fill();
+    ctx.strokeStyle='#ffb8d2';ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(W/2,H*.7,Math.min(W*.4,225),H*.062,0,0,6.283);ctx.stroke();
+  }
+
+  function baby(){
+    const k=SC[stage]*u,sleeping=anim==='sleep',happy=anim==='cuddle'||anim==='play'||anim==='sing';
+    const mobile=stage>=2,bx=W/2+(mobile&&anim==='idle'&&!reduce?Math.sin(time*.45)*W*.18:0);
+    const bounce=reduce?0:Math.abs(Math.sin(time*(stage>=3?5:2.2)))*(mobile&&anim==='idle'?(stage>=3?4:2):1.5);
+    const y0=H*.7+6,sway=stage>=3&&anim==='idle'&&!reduce?Math.sin(time*5)*.05:0;
+    ctx.save();ctx.translate(bx,y0);ctx.scale(k,k);
+    ctx.fillStyle='rgba(120,70,90,.18)';ctx.beginPath();ctx.ellipse(0,0,56,11,0,0,6.283);ctx.fill();
+    ctx.translate(0,-bounce);ctx.rotate(sway);
+    const skin='#ffdcc4',cloth=stage>=3?'#ffd27a':'#a8d8ff';
+    let hy=-108;
+    if(stage===0){
+      ctx.fillStyle='#ffc4d8';ctx.beginPath();ctx.ellipse(0,-32,64,40,0,0,6.283);ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=4;for(let i=-40;i<=40;i+=20){ctx.beginPath();ctx.moveTo(i,-66);ctx.quadraticCurveTo(i+6,-32,i,-0);ctx.stroke();}
+      hy=-74;
+    }else{
+      ctx.fillStyle=skin;
+      const ly=stage>=3?22:12,lh=stage>=3?34:20;
+      [-18,18].forEach(x=>{ctx.beginPath();ctx.ellipse(x,-ly,13,lh*.55,0,0,6.283);ctx.fill();});
+      ctx.fillStyle=cloth;ctx.beginPath();ctx.ellipse(0,-52,35,38,0,0,6.283);ctx.fill();
+      // arms
+      const wave=anim==='play'||anim==='cuddle'?Math.sin(time*9)*.5:(stage===4&&anim==='idle'?Math.sin(time*4)*.5:0);
+      ctx.fillStyle=skin;
+      ctx.save();ctx.translate(-36,-60);ctx.rotate(.5+wave);ctx.beginPath();ctx.ellipse(0,10,9,20,0,0,6.283);ctx.fill();ctx.restore();
+      ctx.save();ctx.translate(36,-60);ctx.rotate(-.5-(stage===4?wave*1.4:wave));ctx.beginPath();ctx.ellipse(0,10,9,20,0,0,6.283);ctx.fill();ctx.restore();
+    }
+    // head
+    ctx.fillStyle=skin;ctx.beginPath();ctx.arc(0,hy,40,0,6.283);ctx.fill();
+    ctx.beginPath();ctx.arc(-39,hy+4,8,0,6.283);ctx.arc(39,hy+4,8,0,6.283);ctx.fill();
+    if(stage>=1){ctx.strokeStyle='#8a5a3c';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(0,hy-39);ctx.bezierCurveTo(-10,hy-60,12,hy-62,6,hy-48);ctx.stroke();}
+    else{ctx.strokeStyle='#8a5a3c';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-4,hy-39);ctx.quadraticCurveTo(0,hy-48,5,hy-39);ctx.stroke();}
+    ctx.fillStyle='rgba(255,140,170,.55)';[-24,24].forEach(x=>{ctx.beginPath();ctx.arc(x,hy+12,8,0,6.283);ctx.fill();});
+    // eyes
+    blink-=1/60;if(blink<-.15)blink=2+Math.random()*3;
+    ctx.strokeStyle='#4a2c3a';ctx.fillStyle='#4a2c3a';ctx.lineWidth=3.5;ctx.lineCap='round';
+    [-14,14].forEach(x=>{
+      if(sleeping||blink<0){ctx.beginPath();ctx.arc(x,hy-2,5,.15*Math.PI,.85*Math.PI);ctx.stroke();}
+      else if(happy){ctx.beginPath();ctx.arc(x,hy,5.5,1.15*Math.PI,1.85*Math.PI);ctx.stroke();}
+      else{ctx.beginPath();ctx.arc(x,hy-1,5,0,6.283);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x+1.6,hy-3,1.6,0,6.283);ctx.fill();ctx.fillStyle='#4a2c3a';}
+    });
+    // mouth
+    const open=anim==='feed'?(Math.sin(time*7)>0):anim==='sing';
+    ctx.strokeStyle='#c4506e';ctx.lineWidth=3;
+    if(open){ctx.fillStyle='#d9506f';ctx.beginPath();ctx.ellipse(0,hy+16,7,open&&anim==='feed'?8:6,0,0,6.283);ctx.fill();}
+    else{ctx.beginPath();ctx.arc(0,hy+10,happy?9:6,.15*Math.PI,.85*Math.PI);ctx.stroke();}
+    if(anim==='feed')em('🍼',46,hy+22,44);
+    if(anim==='play')em('🧸',-62,-26-Math.abs(Math.sin(time*6))*18,40);
+    ctx.restore();
+    return {x:bx,top:y0-(hy*-1+50)*k};
+  }
+
+  function frame(now){
+    const dt=Math.min((now-last)/1000,.05);last=now;time+=dt;
+    if(animT>0){animT-=dt;if(animT<=0){if(anim==='sleep'){burst('✨',4);}anim='idle';}}
+    dark+=((anim==='sleep'?1:0)-dark)*Math.min(1,dt*2);
+    if(started&&!want){wantT-=dt;if(wantT<=0){want=WANT[Math.floor(Math.random()*5)];}}
+    ctx.clearRect(0,0,W,H);room();
+    const p=baby();
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    if(want&&anim==='idle'){const wy=p.top-30*u;ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(p.x+50*u,wy,28*u,24*u,0,0,6.283);ctx.fill();
+      ctx.beginPath();ctx.arc(p.x+26*u,wy+26*u,5*u,0,6.283);ctx.fill();em(want[1],p.x+50*u,wy+2,28*u);}
+    if(anim==='sleep'&&Math.sin(time*3)>-2){for(let i=0;i<3;i++){const t=(time*.6+i/3)%1;ctx.globalAlpha=1-t;ctx.fillStyle='#5a3560';ctx.font='bold '+(18+i*6)*u+'px sans-serif';ctx.fillText('z',p.x+40*u+t*30,p.top+40*u-t*50*u);}ctx.globalAlpha=1;}
+    for(let i=parts.length-1;i>=0;i--){const q=parts[i];q.x+=q.vx*dt;q.y+=q.vy*dt;q.life-=dt;if(q.life<=0){parts.splice(i,1);continue;}
+      ctx.globalAlpha=Math.min(1,q.life);em(q.e,p.x+q.x,H*.7+q.y,22*u);}
+    ctx.globalAlpha=1;
+    if(dark>.01){ctx.fillStyle='rgba(30,25,80,'+(.5*dark)+')';ctx.fillRect(0,0,W,H);}
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  document.getElementById('sbtn').addEventListener('click',e=>{soundOn=!soundOn;e.currentTarget.textContent=soundOn?'Sound on':'Sound off';e.currentTarget.setAttribute('aria-pressed',soundOn);});
+  document.getElementById('start').addEventListener('click',()=>{
+    name=(document.getElementById('name').value||'').trim()||name;stage=stageOf(love);started=true;
+    document.getElementById('intro').classList.add('gone');ui();save();giggle();
+    toast(love>0?`Welcome back! ${name} missed you.`:`Say hello to ${name}!`);
+  });
+  ui();
+})();
+</script>
+</body>
+</html>
